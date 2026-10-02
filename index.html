@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Euler Angles 3D Visualizer</title>
+<style>
+:root{--bg:#07111f;--panel:#0d1b2e;--line:#203553;--text:#eaf2ff;--muted:#91a4bf;--accent:#61dafb}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#17345a,#07111f 55%);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}
+#app{height:100vh;display:grid;grid-template-columns:330px 1fr;grid-template-rows:1fr 86px}
+aside{grid-row:1/3;background:rgba(7,16,29,.92);border-right:1px solid var(--line);padding:22px;overflow:auto;z-index:5}
+h1{font-size:21px;margin:0 0 5px}.sub{color:var(--muted);font-size:12px;margin-bottom:22px}
+.card{border:1px solid var(--line);background:rgba(16,31,51,.72);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px}input[type=range]{width:100%;accent-color:var(--accent)}
+.value{font-variant-numeric:tabular-nums;color:#fff;font-weight:700}
+button{border:1px solid #29415f;background:#12243b;color:#eaf2ff;border-radius:9px;padding:9px 11px;cursor:pointer}button:hover{background:#183250}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#viewport{position:relative;min-width:0}.hint{position:absolute;left:18px;top:16px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(7,16,29,.72);backdrop-filter:blur(8px);font-size:12px;color:var(--muted);z-index:2}
+#steps{grid-column:2;display:flex;align-items:center;gap:8px;padding:12px 18px;background:rgba(6,14,25,.94);border-top:1px solid var(--line);overflow-x:auto}
+.step{min-width:180px;text-align:left}.step strong{display:block}.step span{font-size:11px;color:var(--muted)}.step.active{border-color:var(--accent);box-shadow:0 0 0 1px #61dafb33 inset}
+.legend{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;color:var(--muted)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.x{background:#ff5b5b}.y{background:#58e36d}.z{background:#61a8ff}
+.readout{font-size:12px;line-height:1.7;color:var(--muted)}.readout b{color:#fff}.formula{font-family:ui-monospace,monospace;font-size:11px;color:#b7c8df;line-height:1.6}
+@media(max-width:850px){#app{grid-template-columns:1fr;grid-template-rows:auto 1fr 86px}aside{grid-row:1;border-right:0;border-bottom:1px solid var(--line);max-height:45vh}#steps{grid-column:1}}
+</style>
+</head>
+<body><div id="app">
+<aside>
+<h1>Euler Angles · 3D</h1><div class="sub">Sequential orientation: ψ → θ → φ</div>
+<div class="card">
+<label><span>ψ (psi) · Z rotation</span><span class="value" id="psiV">35°</span></label>
+<input id="psi" type="range" min="-180" max="180" value="35">
+<label style="margin-top:12px"><span>θ (theta) · Y rotation</span><span class="value" id="thetaV">25°</span></label>
+<input id="theta" type="range" min="-90" max="90" value="25">
+<label style="margin-top:12px"><span>φ (phi) · X rotation</span><span class="value" id="phiV">40°</span></label>
+<input id="phi" type="range" min="-180" max="180" value="40">
+</div>
+<div class="card buttons">
+<button id="prev">← Previous</button><button id="next">Next →</button>
+<button id="play">▶ Animate</button><button id="reset">Reset</button>
+</div>
+<div class="card readout" id="readout"></div>
+<div class="card formula">
+<b>Convention</b><br>
+R = R<sub>z</sub>(ψ) R<sub>y</sub>(θ) R<sub>x</sub>(φ)<br><br>
+Step 0: initial frame OXYZ<br>
+Step 1: apply ψ about Z<br>
+Step 2: apply θ about the new Y<br>
+Step 3: apply φ about the newest X<br>
+The final body frame is shown with solid axes.
+</div>
+<div class="card legend">
+<div><i class="dot x"></i>X / x′</div><div><i class="dot y"></i>Y / y′</div><div><i class="dot z"></i>Z / z′</div>
+</div>
+</aside>
+<section id="viewport"><div class="hint">Drag to orbit · Wheel to zoom · Step through the rotations</div></section>
+<div id="steps">
+<button class="step active" data-step="0"><strong>0 · Initial</strong><span>OXYZ</span></button>
+<button class="step" data-step="1"><strong>1 · ψ</strong><span>Z rotation</span></button>
+<button class="step" data-step="2"><strong>2 · θ</strong><span>new Y rotation</span></button>
+<button class="step" data-step="3"><strong>3 · φ</strong><span>new X rotation · final</span></button>
+</div>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const viewport=document.getElementById('viewport');
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x07111f);
+const camera=new THREE.PerspectiveCamera(45,1,.1,100); camera.position.set(7,5.5,8);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); viewport.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,0,0);
+scene.add(new THREE.HemisphereLight(0xaecbff,0x182235,2.2));
+const grid=new THREE.GridHelper(10,20,0x2b496b,0x172b43); scene.add(grid);
+const origin=new THREE.Vector3(0,0,0), L=3.0;
+
+function axisArrow(dir,color,label){
+ const g=new THREE.Group();
+ const arrow=new THREE.ArrowHelper(dir.clone().normalize(),origin,L,color,.18,.09);
+ g.add(arrow);
+ const c=document.createElement('canvas');c.width=256;c.height=64;const ctx=c.getContext('2d');
+ ctx.fillStyle='#fff';ctx.font='bold 28px Arial';ctx.fillText(label,8,38);
+ const tex=new THREE.CanvasTexture(c), sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true}));
+ sp.scale.set(.8,.2,1); sp.position.copy(dir.clone().normalize().multiplyScalar(L+0.3)); g.add(sp); return g;
+}
+const base=new THREE.Group();
+base.add(axisArrow(new THREE.Vector3(1,0,0),0xff5b5b,'X'));
+base.add(axisArrow(new THREE.Vector3(0,1,0),0x58e36d,'Y'));
+base.add(axisArrow(new THREE.Vector3(0,0,1),0x61a8ff,'Z')); scene.add(base);
+
+const body=new THREE.Group(); scene.add(body);
+const axes={};
+axes.x=axisArrow(new THREE.Vector3(1,0,0),0xff5b5b,"x′");
+axes.y=axisArrow(new THREE.Vector3(0,1,0),0x58e36d,"y′");
+axes.z=axisArrow(new THREE.Vector3(0,0,1),0x61a8ff,"z′");
+body.add(axes.x,axes.y,axes.z);
+
+function arc(radius,start,end,plane,color){
+ const pts=[]; const n=48;
+ for(let i=0;i<=n;i++){const a=start+(end-start)*i/n; let v;
+  if(plane==='z')v=new THREE.Vector3(Math.cos(a)*radius,Math.sin(a)*radius,0);
+  if(plane==='y')v=new THREE.Vector3(Math.cos(a)*radius,0,Math.sin(a)*radius);
+  if(plane==='x')v=new THREE.Vector3(0,Math.cos(a)*radius,Math.sin(a)*radius);
+  pts.push(v);
+ }
+ const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color,transparent:true,opacity:.9}));
+ scene.add(line); return line;
+}
+let arcLines=[];
+function clearArcs(){arcLines.forEach(x=>scene.remove(x));arcLines=[]}
+function deg(v){return THREE.MathUtils.degToRad(v)}
+let step=0, playing=false;
+const psi=document.getElementById('psi'),theta=document.getElementById('theta'),phi=document.getElementById('phi');
+function rotation(){
+ const e=new THREE.Euler(deg(+phi.value),deg(+theta.value),deg(+psi.value),'XYZ');
+ return new THREE.Quaternion().setFromEuler(e);
+}
+function update(){
+ document.getElementById('psiV').textContent=psi.value+'°';document.getElementById('thetaV').textContent=theta.value+'°';document.getElementById('phiV').textContent=phi.value+'°';
+ const q=rotation(); body.quaternion.copy(q);
+ body.visible=step>0;
+ clearArcs();
+ const p=deg(+psi.value),t=deg(+theta.value),f=deg(+phi.value);
+ if(step>=1)arcLines.push(arc(1.5,0,p,'z',0x61a8ff));
+ if(step>=2){const y=new THREE.Vector3(0,1,0).applyAxisAngle(new THREE.Vector3(0,0,1),p); const pts=[];for(let i=0;i<=48;i++){const a=t*i/48;const v=new THREE.Vector3(Math.cos(a),0,Math.sin(a)).applyAxisAngle(new THREE.Vector3(0,0,1),p);pts.push(v.multiplyScalar(1.7));}const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x58e36d}));scene.add(l);arcLines.push(l);}
+ if(step>=3){const x=new THREE.Vector3(1,0,0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),p)).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0).applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),p)),t));const pts=[];for(let i=0;i<=48;i++){const a=f*i/48;const v=new THREE.Vector3(0,Math.cos(a),Math.sin(a)).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1,0,0),x));pts.push(v.multiplyScalar(1.9));}const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xff5b5b}));scene.add(l);arcLines.push(l);}
+ document.querySelectorAll('.step').forEach(b=>b.classList.toggle('active',+b.dataset.step===step));
+ const labels=['Initial reference frame: no rotation has been applied.','ψ applied: the frame turns about the original Z axis.','θ applied: the already-rotated frame turns about its new Y axis.','φ applied: the frame turns about its newest X axis. This is the final orientation.'];
+ document.getElementById('readout').innerHTML='<b>'+labels[step]+'</b><br><br>ψ = <b>'+psi.value+'°</b><br>θ = <b>'+theta.value+'°</b><br>φ = <b>'+phi.value+'°</b><br><br>At this step: <b>'+step+'/3</b>';
+}
+[psi,theta,phi].forEach(x=>x.addEventListener('input',update));
+document.querySelectorAll('.step').forEach(b=>b.onclick=()=>{step=+b.dataset.step;update()});
+document.getElementById('next').onclick=()=>{step=Math.min(3,step+1);update()};
+document.getElementById('prev').onclick=()=>{step=Math.max(0,step-1);update()};
+document.getElementById('reset').onclick=()=>{psi.value=35;theta.value=25;phi.value=40;step=0;update()};
+document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'⏸ Pause':'▶ Animate'};
+function resize(){const r=viewport.getBoundingClientRect();camera.aspect=r.width/r.height;camera.updateProjectionMatrix();renderer.setSize(r.width,r.height)}
+addEventListener('resize',resize);resize();update();
+let last=performance.now();
+function animate(now){requestAnimationFrame(animate);const dt=(now-last)/1000;last=now;if(playing){const order=[1,2,3];if(!window._timer)window._timer=0;window._timer+=dt;if(window._timer>1.4){window._timer=0;step=step>=3?0:step+1;update()}}controls.update();renderer.render(scene,camera)}
+animate(performance.now());
+</script></body></html>
